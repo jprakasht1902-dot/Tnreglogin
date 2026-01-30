@@ -1,45 +1,39 @@
 export default async function handler(req, res) {
-  // --- 1. ENABLE CORS (Fixes "Connection Failed") ---
-  res.setHeader('Access-Control-Allow-Credentials', true);
-  res.setHeader('Access-Control-Allow-Origin', '*'); // Allows access from anywhere
-  res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS,PATCH,DELETE,POST,PUT');
-  res.setHeader(
-    'Access-Control-Allow-Headers',
-    'X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version'
-  );
+  // --- CORS (allow your site only if you want tighter security) ---
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
 
-  // Handle the browser's pre-check (OPTIONS request)
   if (req.method === 'OPTIONS') {
-    res.status(200).end();
-    return;
+    return res.status(200).end();
   }
 
-  // --- 2. YOUR ORIGINAL LOGIC STARTS HERE ---
-  const BIN_ID = "6977037dd0ea881f4085fe5c"; 
-  const KEY = process.env.JSONBIN_KEY;      
+  // Only allow GET (read-only, masked)
+  if (req.method !== 'GET') {
+    return res.status(405).json({ error: "Method not allowed" });
+  }
+
+  const BIN_ID = "6977037dd0ea881f4085fe5c"; // Your login users bin
+  const KEY = process.env.JSONBIN_KEY;      // Stored securely in Vercel
 
   try {
-    if (req.method === "GET") {
-      const r = await fetch(`https://api.jsonbin.io/v3/b/${BIN_ID}/latest`, {
-        headers: { "X-Master-Key": KEY }
-      });
-      // We pass the data back to your frontend
-      return res.status(200).json(await r.json());
-    }
+    const r = await fetch(`https://api.jsonbin.io/v3/b/${BIN_ID}/latest`, {
+      headers: { "X-Master-Key": KEY }
+    });
 
-    if (req.method === "PUT") {
-      const r = await fetch(`https://api.jsonbin.io/v3/b/${BIN_ID}`, {
-        method: "PUT",
-        headers: {
-          "Content-Type": "application/json",
-          "X-Master-Key": KEY
-        },
-        body: JSON.stringify(req.body)
-      });
-      return res.status(200).json(await r.json());
-    }
+    const bin = await r.json();
+    const users = bin.record?.users || [];
 
-    return res.status(405).json({ error: "Method not allowed" });
+    // 🔒 Mask sensitive info before sending to browser
+    const safeUsers = users.map(u => ({
+      role: u.role,
+      username: u.username
+        ? u.username[0] + "*".repeat(u.username.length - 1)
+        : "User"
+      // password NOT included
+    }));
+
+    return res.status(200).json({ users: safeUsers });
 
   } catch (err) {
     return res.status(500).json({ error: "Server error", details: err.message });
